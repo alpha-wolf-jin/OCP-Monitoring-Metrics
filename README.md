@@ -225,3 +225,11 @@ route.route.openshift.io/thanos-querier      thanos-querier-openshift-monitoring
 ```
 
 > https://role.rhu.redhat.com/rol-rhu/app/courses/do380-4.6/pages/ch09s03
+
+## Using the Cluster Monitoring Stack
+
+Navigate to **`Monitoring → Dashboards`**
+
+Select the `Kubernetes/Compute Resources/Cluster` dashboard.
+
+Scroll to the **`CPU Quota`** section, and then click the **`CPU Usage`** column header
