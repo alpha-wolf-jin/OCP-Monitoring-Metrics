@@ -223,3 +223,5 @@ route.route.openshift.io/thanos-querier      thanos-querier-openshift-monitoring
 [student@workstation monitor]$ 
 
 ```
+
+> https://role.rhu.redhat.com/rol-rhu/app/courses/do380-4.6/pages/ch09s03
