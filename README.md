@@ -136,4 +136,4 @@ q:Quit  d:Del  u:Undel  s:Save  m:Mail  r:Reply  g:Group  ?:Help
 ```
 
 
-- From the OpenShift web console, navigate to `**Monitoring → Alerting**`
+- From the OpenShift web console, navigate to **`Monitoring → Alerting`**
