@@ -558,3 +558,423 @@ Filesystem                                                                      
 
 
 ```
+## Summary
+
+-    OpenShift 4 installs the cluster monitoring stack by default.
+-    Prometheus rules generate alerts for potential cluster problems.
+-    Alertmanager can send alerts to external locations and display alerts in the OpenShift web console.
+-    Grafana graphically displays metrics collected by Prometheus and you can use it to identify trends and problems for the cluster, nodes, and namespaces.
+-    How to configure Prometheus and Alertmanager to use persistent storage to prevent data loss.
+
+# Deploying Cluster Logging
+
+```
+$ vim cl-minimal.yml
+apiVersion: "logging.openshift.io/v1"
+kind: "ClusterLogging"
+metadata:
+  name: "instance"
+  namespace: "openshift-logging"
+spec:
+  managementState: "Managed"
+  logStore:
+    type: "elasticsearch"
+    retentionPolicy:
+      application:
+        maxAge: 1d
+      infra:
+        maxAge: 7d
+      audit:
+        maxAge: 7d
+    elasticsearch:
+      nodeCount: 2
+      nodeSelector:
+          node-role.kubernetes.io/infra: ''
+      storage:
+        storageClassName: "local-blk"
+        size: 20G
+      redundancyPolicy: MultipleRedundancy
+      resources:
+        limits:
+          memory: "8Gi"
+        requests:
+          cpu: "1"
+          memory: "8Gi"
+  visualization:
+    type: "kibana"
+    kibana:
+      nodeSelector:
+          node-role.kubernetes.io/infra: ''
+      replicas: 1
+  curation:
+    type: "curator"
+    curator:
+      schedule: "30 3 * * *"
+  collection:
+    logs:
+      type: "fluentd"
+      fluentd: {}
+
+$ cat cluster-logging.yml
+- name: Install Cluster Logging
+  hosts: localhost
+  module_defaults:
+    group/k8s:
+      ca_cert: "/etc/pki/tls/certs/ca-bundle.crt"
+  tasks:
+    - name: Create objects from the manifests
+      k8s:
+        state: "{{ k8s_state | default('present') }}"
+        src: "{{ playbook_dir + '/' + item }}"
+      loop:
+        - logging-operator.yml
+        - elasticsearch-operator.yml
+        - event-router.yml
+
+    - name: Retrieve installed Subscription
+      k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: "cluster-logging"
+        namespace: "openshift-logging"
+      register: cl_subs
+      retries: 30
+      delay: 3
+      until:
+      - cl_subs.resources | length > 0
+      - cl_subs.resources[0].status is defined
+      - cl_subs.resources[0].status.installedCSV is defined
+      when: k8s_state is not defined or k8s_state == 'present'
+
+    - name: Wait until CSV is ready
+      k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ cl_subs.resources[0].status.installedCSV }}"
+        namespace: "openshift-logging"
+      register: cl_csv
+      retries: 30
+      delay: 3
+      until:
+      - cl_csv.resources | length > 0
+      - cl_csv.resources[0].status is defined
+      - cl_csv.resources[0].status.phase is defined
+      - cl_csv.resources[0].status.phase == "Succeeded"
+      when: k8s_state is not defined or k8s_state == 'present'
+
+    - name: Create ClusterLogging instance
+      k8s:
+        state: "{{ k8s_state | default('present') }}"
+        src: "{{ playbook_dir + '/' + item }}"
+      loop:
+        - cl-minimal.yml
+
+$ cat elasticsearch-operator.yml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-operators-redhat
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-operators-redhat
+  namespace: openshift-operators-redhat
+spec: {}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: "elasticsearch-operator"
+  namespace: "openshift-operators-redhat"
+spec:
+  channel: "4.6"
+  installPlanApproval: "Automatic"
+  source: "redhat-operators"
+  sourceNamespace: "openshift-marketplace"
+  name: "elasticsearch-operator"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-k8s
+  namespace: openshift-operators-redhat
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - services
+      - endpoints
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-k8s
+  namespace: openshift-operators-redhat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-k8s
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-k8s
+    namespace: openshift-operators-redhat
+---
+
+$ cat event-router.yml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eventrouter
+  namespace: openshift-logging
+---
+apiVersion: authorization.openshift.io/v1
+kind: ClusterRole
+metadata:
+  name: event-reader
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: authorization.openshift.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: event-reader-binding
+subjects:
+- kind: ServiceAccount
+  name: eventrouter
+  namespace: openshift-logging
+roleRef:
+  kind: ClusterRole
+  name: event-reader
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eventrouter
+  namespace: openshift-logging
+data:
+  config.json: |-
+    {
+      "sink": "stdout"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventrouter
+  namespace: openshift-logging
+  labels:
+    component: eventrouter
+    logging-infra: eventrouter
+    provider: openshift
+spec:
+  selector:
+    matchLabels:
+      component: eventrouter
+      logging-infra: eventrouter
+      provider: openshift
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        component: eventrouter
+        logging-infra: eventrouter
+        provider: openshift
+      name: eventrouter
+    spec:
+      serviceAccount: eventrouter
+      containers:
+        - name: kube-eventrouter
+          image: registry.redhat.io/openshift4/ose-logging-eventrouter:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+          - name: config-volume
+            mountPath: /etc/eventrouter
+      volumes:
+        - name: config-volume
+          configMap:
+            name: eventrouter
+---
+
+$ cat logging-operator.yml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-logging
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  targetNamespaces:
+    - openshift-logging
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  channel: "4.6"
+  name: cluster-logging
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+---
+
+$ ansible-playbook cluster-logging.yml -v
+
+$ oc get csv -A
+NAMESPACE                                          NAME                                        DISPLAY                            VERSION              REPLACES   PHASE
+default                                            elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+kube-node-lease                                    elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+kube-public                                        elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+kube-system                                        elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+nfs-client-provisioner                             elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-apiserver-operator                       elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-apiserver                                elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-authentication-operator                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-authentication                           elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-cloud-credential-operator                elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-cluster-csi-drivers                      elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-cluster-machine-approver                 elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-cluster-node-tuning-operator             elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-cluster-samples-operator                 elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-cluster-storage-operator                 elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-cluster-version                          elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-config-managed                           elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-config-operator                          elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-config                                   elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-console-operator                         elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-console                                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-controller-manager-operator              elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-controller-manager                       elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-dns-operator                             elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-dns                                      elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-etcd-operator                            elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-etcd                                     elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-image-registry                           elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-infra                                    elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-ingress-operator                         elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-ingress                                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-insights                                 elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kni-infra                                elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-apiserver-operator                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-apiserver                           elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-controller-manager-operator         elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-controller-manager                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-scheduler-operator                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-scheduler                           elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-storage-version-migrator-operator   elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-kube-storage-version-migrator            elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-logging                                  clusterlogging.4.6.0-202204261127           Cluster Logging                    4.6.0-202204261127              Succeeded
+openshift-logging                                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-machine-api                              elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-machine-config-operator                  elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-marketplace                              elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-monitoring                               elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-multus                                   elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-network-operator                         elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-node                                     elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-oauth-apiserver                          elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-openstack-infra                          elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-operator-lifecycle-manager               elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-operator-lifecycle-manager               packageserver                               Package Server                     0.16.1                          Succeeded
+openshift-operators-redhat                         elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-operators                                elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-ovirt-infra                              elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-sdn                                      elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-service-ca-operator                      elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-service-ca                               elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-user-workload-monitoring                 elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift-vsphere-infra                            elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+openshift                                          elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+storage-local                                      elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+storage-local                                      local-storage-operator.4.6.0-202204261127   Local Storage                      4.6.0-202204261127              Succeeded
+
+$ oc get csv -n openshift-logging
+NAME                                        DISPLAY                            VERSION              REPLACES   PHASE
+clusterlogging.4.6.0-202204261127           Cluster Logging                    4.6.0-202204261127              Succeeded
+elasticsearch-operator.4.6.0-202204261127   OpenShift Elasticsearch Operator   4.6.0-202204261127              Succeeded
+
+$ oc get deployment,pod,pvc,svc,route -n openshift-logging
+NAME                                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/cluster-logging-operator       1/1     1            1           4m33s
+deployment.apps/elasticsearch-cdm-98yim8fd-1   1/1     1            1           4m3s
+deployment.apps/elasticsearch-cdm-98yim8fd-2   1/1     1            1           4m2s
+deployment.apps/eventrouter                    1/1     1            1           5m7s
+deployment.apps/kibana                         1/1     1            1           3m28s
+
+NAME                                                READY   STATUS    RESTARTS   AGE
+pod/cluster-logging-operator-776848d78f-4trwv       1/1     Running   0          4m33s
+pod/elasticsearch-cdm-98yim8fd-1-65556b98ff-dq24f   2/2     Running   0          4m3s
+pod/elasticsearch-cdm-98yim8fd-2-577b8bfcdb-mrbp8   2/2     Running   0          4m2s
+pod/eventrouter-895d9774b-7tgbj                     1/1     Running   0          5m7s
+pod/fluentd-2kddf                                   1/1     Running   0          4m2s
+pod/fluentd-546x9                                   1/1     Running   0          4m2s
+pod/fluentd-9xd7l                                   1/1     Running   0          4m2s
+pod/fluentd-bfz5p                                   1/1     Running   0          4m2s
+pod/fluentd-g5mgh                                   1/1     Running   0          4m2s
+pod/fluentd-kptgs                                   1/1     Running   0          4m2s
+pod/fluentd-kwpg5                                   1/1     Running   0          4m2s
+pod/fluentd-sckwq                                   1/1     Running   0          4m2s
+pod/fluentd-wpptj                                   1/1     Running   0          4m2s
+pod/kibana-b64f98c94-9dx8h                          2/2     Running   0          3m28s
+
+NAME                                                               STATUS   VOLUME              CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+persistentvolumeclaim/elasticsearch-elasticsearch-cdm-98yim8fd-1   Bound    local-pv-fa5f842a   20Gi       RWO            local-blk      4m3s
+persistentvolumeclaim/elasticsearch-elasticsearch-cdm-98yim8fd-2   Bound    local-pv-6a1acc58   20Gi       RWO            local-blk      4m3s
+
+NAME                                       TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)             AGE
+service/cluster-logging-operator-metrics   ClusterIP   172.30.52.187    <none>        8383/TCP,8686/TCP   4m13s
+service/elasticsearch                      ClusterIP   172.30.125.237   <none>        9200/TCP            4m3s
+service/elasticsearch-cluster              ClusterIP   172.30.45.233    <none>        9300/TCP            4m3s
+service/elasticsearch-metrics              ClusterIP   172.30.29.164    <none>        60001/TCP           4m3s
+service/fluentd                            ClusterIP   172.30.186.155   <none>        24231/TCP           4m10s
+service/kibana                             ClusterIP   172.30.246.131   <none>        443/TCP             4m3s
+
+NAME                              HOST/PORT                                        PATH   SERVICES   PORT    TERMINATION          WILDCARD
+route.route.openshift.io/kibana   kibana-openshift-logging.apps.ocp4.example.com          kibana     <all>   reencrypt/Redirect   None
+
+
+
+```
+**Web Console Installation**
+```
+
+```
+
+**Kibana UI**
+
+Click the **`Create index pattern`** to the app index pattern.
+- Type `app` in the **`Index pattern`** text field 
+- Click **`Next step`**
+- Select `@timestamp` from the **`Time Filter`** field name list.
+- Click **`Create index pattern`**
+
+
+```
+
+```
