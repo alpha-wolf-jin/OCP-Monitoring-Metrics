@@ -137,3 +137,88 @@ q:Quit  d:Del  u:Undel  s:Save  m:Mail  r:Reply  g:Group  ?:Help
 
 
 - From the OpenShift web console, navigate to **`Monitoring → Alerting`**
+- Click the **`TestAlert`** link to get details
+- Click Silence Alert to silence the alert.
+- Navigate to **`Monitoring → Alerting`** in the web console to verify that the TestAlert alert is no longer firing.
+
+```
+$ sed -i 's/warning/critical/' /tmp/alertmanager.yaml
+
+$ oc set data secret/alertmanager-main -n openshift-monitoring --from-file /tmp/alertmanager.yaml
+
+$ oc project openshift-monitoring
+Now using project "openshift-monitoring" on server "https://api.ocp4.example.com:6443".
+[student@workstation monitor]$ oc get all
+NAME                                               READY   STATUS    RESTARTS   AGE
+pod/alertmanager-main-0                            5/5     Running   0          183d
+pod/alertmanager-main-1                            5/5     Running   0          183d
+pod/alertmanager-main-2                            5/5     Running   0          183d
+pod/cluster-monitoring-operator-78cd56b95d-sjk86   2/2     Running   0          183d
+pod/grafana-f9c9ccb65-zz965                        2/2     Running   0          183d
+pod/kube-state-metrics-5db8c78f5f-mpcbg            3/3     Running   0          183d
+pod/node-exporter-25v9w                            2/2     Running   0          183d
+pod/node-exporter-2cvgl                            2/2     Running   0          183d
+pod/node-exporter-87jlh                            2/2     Running   0          183d
+pod/node-exporter-hh8zm                            2/2     Running   0          183d
+pod/node-exporter-l98xb                            2/2     Running   0          183d
+pod/node-exporter-lp52j                            2/2     Running   0          183d
+pod/openshift-state-metrics-7cf4dc694b-kjx8f       3/3     Running   0          183d
+pod/prometheus-adapter-566c44f955-6thkr            1/1     Running   0          105m
+pod/prometheus-adapter-566c44f955-vlwv5            1/1     Running   0          105m
+pod/prometheus-k8s-0                               6/6     Running   0          183d
+pod/prometheus-k8s-1                               6/6     Running   0          183d
+pod/prometheus-operator-7ccb887947-sp4cr           2/2     Running   0          183d
+pod/thanos-querier-5997fbd4bd-f6m9n                5/5     Running   0          183d
+pod/thanos-querier-5997fbd4bd-g2ckq                5/5     Running   0          183d
+
+NAME                                  TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+service/alertmanager-main             ClusterIP   172.30.188.235   <none>        9094/TCP,9092/TCP            183d
+service/alertmanager-operated         ClusterIP   None             <none>        9093/TCP,9094/TCP,9094/UDP   183d
+service/cluster-monitoring-operator   ClusterIP   None             <none>        8443/TCP                     183d
+service/grafana                       ClusterIP   172.30.98.162    <none>        3000/TCP                     183d
+service/kube-state-metrics            ClusterIP   None             <none>        8443/TCP,9443/TCP            183d
+service/node-exporter                 ClusterIP   None             <none>        9100/TCP                     183d
+service/openshift-state-metrics       ClusterIP   None             <none>        8443/TCP,9443/TCP            183d
+service/prometheus-adapter            ClusterIP   172.30.209.97    <none>        443/TCP                      183d
+service/prometheus-k8s                ClusterIP   172.30.68.1      <none>        9091/TCP,9092/TCP            183d
+service/prometheus-operated           ClusterIP   None             <none>        9090/TCP,10901/TCP           183d
+service/prometheus-operator           ClusterIP   None             <none>        8443/TCP,8080/TCP            183d
+service/thanos-querier                ClusterIP   172.30.191.9     <none>        9091/TCP,9092/TCP,9093/TCP   183d
+
+NAME                           DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+daemonset.apps/node-exporter   6         6         6       6            6           kubernetes.io/os=linux   183d
+
+NAME                                          READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/cluster-monitoring-operator   1/1     1            1           183d
+deployment.apps/grafana                       1/1     1            1           183d
+deployment.apps/kube-state-metrics            1/1     1            1           183d
+deployment.apps/openshift-state-metrics       1/1     1            1           183d
+deployment.apps/prometheus-adapter            2/2     2            2           183d
+deployment.apps/prometheus-operator           1/1     1            1           183d
+deployment.apps/thanos-querier                2/2     2            2           183d
+
+NAME                                                     DESIRED   CURRENT   READY   AGE
+replicaset.apps/cluster-monitoring-operator-78cd56b95d   1         1         1       183d
+replicaset.apps/grafana-7ff876c957                       0         0         0       183d
+replicaset.apps/grafana-f9c9ccb65                        1         1         1       183d
+replicaset.apps/kube-state-metrics-5db8c78f5f            1         1         1       183d
+replicaset.apps/openshift-state-metrics-7cf4dc694b       1         1         1       183d
+replicaset.apps/prometheus-adapter-566c44f955            2         2         2       105m
+replicaset.apps/prometheus-adapter-7d4cb9df7             0         0         0       183d
+replicaset.apps/prometheus-operator-6b568cc478           0         0         0       183d
+replicaset.apps/prometheus-operator-7ccb887947           1         1         1       183d
+replicaset.apps/thanos-querier-5997fbd4bd                2         2         2       183d
+replicaset.apps/thanos-querier-6d4dbcb564                0         0         0       183d
+
+NAME                                 READY   AGE
+statefulset.apps/alertmanager-main   3/3     183d
+statefulset.apps/prometheus-k8s      2/2     183d
+
+NAME                                         HOST/PORT                                                      PATH   SERVICES            PORT    TERMINATION          WILDCARD
+route.route.openshift.io/alertmanager-main   alertmanager-main-openshift-monitoring.apps.ocp4.example.com          alertmanager-main   web     reencrypt/Redirect   None
+route.route.openshift.io/grafana             grafana-openshift-monitoring.apps.ocp4.example.com                    grafana             https   reencrypt/Redirect   None
+route.route.openshift.io/prometheus-k8s      prometheus-k8s-openshift-monitoring.apps.ocp4.example.com             prometheus-k8s      web     reencrypt/Redirect   None
+route.route.openshift.io/thanos-querier      thanos-querier-openshift-monitoring.apps.ocp4.example.com             thanos-querier      web     reencrypt/Redirect   None
+[student@workstation monitor]$ 
+
+```
