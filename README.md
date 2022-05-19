@@ -48,6 +48,6 @@ Grafana is a platform for analyzing and visualizing metrics. The Grafana dashboa
 
 ## Managing OpenShift Alerts
 
---    Configure Alertmanager to send email alerts.
---    Review default alerts.
---    Silence a firing alert.
+-    Configure Alertmanager to send email alerts.
+-    Review default alerts.
+-    Silence a firing alert.
