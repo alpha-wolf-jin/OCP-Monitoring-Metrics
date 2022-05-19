@@ -966,15 +966,70 @@ route.route.openshift.io/kibana   kibana-openshift-logging.apps.ocp4.example.com
 
 ```
 
-**Kibana UI**
+## Kibana UI
 
-Click the **`Create index pattern`** to the app index pattern.
+**Create the app index pattern**
+
+- Click the **`Create index pattern`** to the app index pattern.
 - Type `app` in the **`Index pattern`** text field 
 - Click **`Next step`**
 - Select `@timestamp` from the **`Time Filter`** field name list.
 - Click **`Create index pattern`**
 
+**Create the infra index pattern**
+
+- Click again **`Create index pattern`**
+- Type `infra` in the **`Index pattern`** text field.
+- Click **`Next step`**
+- Select `@timestamp` from the **`Time Filter field name`** list.
+- Click **`Create index pattern`**
+
+## Querying Cluster Logs with Kibana
+
+```
+$ oc get routes -n openshift-logging
+NAME     HOST/PORT                                        PATH   SERVICES   PORT    TERMINATION          WILDCARD
+kibana   kibana-openshift-logging.apps.ocp4.example.com          kibana     <all>   reencrypt/Redirect   None
 
 ```
 
-```
+**Query the logs for messages from the machine-api-operator container**
+
+-    Click **`New`**, and then ensure that the `infra` index pattern is selected.
+-    Type `kubernetes.container_name:"machine-api-operator"` in the query input field, and then click **`Update`**.
+
+     If no results are found, then click the time range selector and pick a larger range, such as Last 1 hour.
+
+-    In the **`Available Fields`** list, click **`add`** next to the **`Message`** field. The machine API operator logs typically output messages about syncing status.
+-    Locate the log messages from when the container started, such as successfully acquired lease openshift-machine-api/machine-api-operator and Starting Machine API Operator.
+
+
+**View the event log from the Event Router to see events related to the restarted pod**
+
+-    Click New, and then ensure that the infra index pattern is selected.
+-    Type kubernetes.event:* in the query input field and click Update.
+
+     If no results are returned, then click the time range selector and pick a larger range, such as Last 1 hour.
+
+-    Click the arrow next to a log result to display the table of fields. Locate a log record where the kubernetes.event.involvedObject.namespace field is openshift-machine-api, and then click the Filter for value magnifying glass icon for that field.
+-    Click the Toggle column in table icon next to the Message field.
+-    Click the arrow next to the log time to collapse result listing.
+-    Locate the Created container and Started container log messages. If they are not visible in the listing, then select a larger time range.
+
+**View the event log from the Event Router to see events related to the restarted pod**
+
+-    Click **`New`**, and then ensure that the `infra` index pattern is selected.
+-    Type **`kubernetes.event:*`** in the query input field and click **`Update`**.
+
+     If no results are returned, then click the time range selector and pick a larger range, such as Last 1 hour.
+
+-    Click the arrow next to a log result to display the table of fields. Locate a log record where the `kubernetes.event.involvedObject.namespace` field is `openshift-machine-api`, and then click the **`Filter`** for value magnifying glass icon for that field.
+-    Click the Toggle column in table icon next to the Message field.
+-    Click the arrow next to the log time to collapse result listing.
+-    Locate the Created container and Started container log messages. If they are not visible in the listing, then select a larger time range.
+
+**In the logging-query project, locate server error logs marked with a 500 status code.**
+
+-    Click **`New`**, and then select the `app` index pattern.
+-    Click **`Add a filter`**. Create a filter in the `kubernetes.namespace_name` field. Select the is operator and a value of `logging-query`. Click **`Save`** to view the filtered results.
+-    In the Lucene query text field, type `message:500` to list all messages including the term "500".
