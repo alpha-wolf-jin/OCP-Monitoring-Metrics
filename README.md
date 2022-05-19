@@ -134,3 +134,6 @@ q:Quit  d:Del  u:Undel  s:Save  m:Mail  r:Reply  g:Group  ?:Help
    3 N   May 19 alerts@ocp4.exa ( 167) [FIRING:1]  (TestAlert openshift-monitori
 
 ```
+
+
+- From the OpenShift web console, navigate to `**Monitoring → Alerting**`
