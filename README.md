@@ -82,7 +82,8 @@ $ sed -i 's/"//g' /tmp/alertmanager.yaml
 ```
 
 **Modify the /tmp/alertmanager.yaml file**
-
+> https://prometheus.io/docs/alerting/latest/configuration/
+> https://www.pagerduty.com/docs/guides/prometheus-integration-guide/
 ```
 $ vim /tmp/alertmanager.yaml
 global:
