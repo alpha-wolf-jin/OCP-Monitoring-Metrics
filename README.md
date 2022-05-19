@@ -1,6 +1,7 @@
 # OCP-Monitoring-Metrics
 
 **Git**
+```
 echo "# OCP-Monitoring-Metrics" >> README.md
 git init
 git add README.md
@@ -11,6 +12,7 @@ git config --global credential.helper 'cache --timeout 7200'
 git push -u origin main
 
 git add . ; git commit -a -m "update README" ; git push -u origin main
+```
 
 ## Listing the Cluster Monitoring Stack Components
 
