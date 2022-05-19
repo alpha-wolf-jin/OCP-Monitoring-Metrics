@@ -31,3 +31,9 @@ Thanos Querier is a single, multitenant interface that enables aggregating and d
 
 **Grafana**
 Grafana is a platform for analyzing and visualizing metrics. The Grafana dashboards provided with the monitoring stack are read-only.
+
+## Managing OpenShift Alerts
+
+--    Configure Alertmanager to send email alerts.
+--    Review default alerts.
+--    Silence a firing alert.
