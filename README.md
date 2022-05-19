@@ -51,3 +51,86 @@ Grafana is a platform for analyzing and visualizing metrics. The Grafana dashboa
 -    Configure Alertmanager to send email alerts.
 -    Review default alerts.
 -    Silence a firing alert.
+
+**Extract the existing alertmanager-main secret from the openshift-monitoring namespace to the /tmp directory**
+```
+$ oc extract secret/alertmanager-main --to /tmp/ -n openshift-monitoring --confirm
+/tmp/alertmanager.yaml
+
+$ cat /tmp/alertmanager.yaml 
+"global":
+  "resolve_timeout": "5m"
+"receivers":
+- "name": "null"
+"route":
+  "group_by":
+  - "namespace"
+  "group_interval": "5m"
+  "group_wait": "30s"
+  "receiver": "null"
+  "repeat_interval": "12h"
+  "routes":
+  - "match":
+      "alertname": "Watchdog"
+    "receiver": "null"
+
+```
+**The default alertmanager-main secret contains many unnecessary quote**
+
+```
+$ sed -i 's/"//g' /tmp/alertmanager.yaml
+```
+
+**Modify the /tmp/alertmanager.yaml file**
+
+```
+$ vim /tmp/alertmanager.yaml
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 192.168.50.254:25
+  smtp_from: alerts@ocp4.example.com
+  smtp_require_tls: false
+receivers:
+- name: default
+- name: email-notification
+  email_configs:
+    - to: ocp-admins@example.com
+route:
+  group_by:
+  - namespace
+  group_interval: 5m
+  group_wait: 30s
+  receiver: default
+  repeat_interval: 1m
+  routes:
+  - match:
+      alertname: Watchdog
+    receiver: default
+  - match:
+      severity: warning
+    receiver: email-notification
+
+```
+
+**Update the existing alertmanager-main secret in the openshift-monitoring namespace**
+
+```
+$ oc set data secret/alertmanager-main -n openshift-monitoring --from-file /tmp/alertmanager.yaml
+
+$ oc logs -f -c alertmanager alertmanager-main-0 -n openshift-monitoring
+...
+level=info ts=2022-05-19T04:50:21.490Z caller=coordinator.go:131 component=configuration msg="Completed loading of configuration file" file=/etc/alertmanager/config/alertmanager.yaml
+
+```
+
+**Verification**
+```
+$ ssh lab@utility.lab.example.com
+[lab@utility ~]$ mutt
+
+q:Quit  d:Del  u:Undel  s:Save  m:Mail  r:Reply  g:Group  ?:Help
+   1  D  May 19 alerts@ocp4.exa ( 203) [FIRING:2]  (openshift-monitoring/k8s war
+   2 N   May 19 alerts@ocp4.exa ( 219)
+   3 N   May 19 alerts@ocp4.exa ( 167) [FIRING:1]  (TestAlert openshift-monitori
+
+```
