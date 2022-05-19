@@ -233,3 +233,7 @@ Navigate to **`Monitoring → Dashboards`**
 Select the `Kubernetes/Compute Resources/Cluster` dashboard.
 
 Scroll to the **`CPU Quota`** section, and then click the **`CPU Usage`** column header
+
+Scroll to the **`Requests by Namespace`** section and then click the **`Memory Usage`** column header
+
+Select the **`Kubernetes/Compute Resources/Namespace (Workloads)`** dashboard. Select the `monitor-troubleshoot` namespace and leave `deployment` as the workload type.
