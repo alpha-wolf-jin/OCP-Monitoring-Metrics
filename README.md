@@ -568,6 +568,8 @@ Filesystem                                                                      
 
 # Deploying Cluster Logging
 
+https://docs.openshift.com/container-platform/4.10/logging/cluster-logging-deploying.html
+
 ```
 $ vim cl-minimal.yml
 apiVersion: "logging.openshift.io/v1"
