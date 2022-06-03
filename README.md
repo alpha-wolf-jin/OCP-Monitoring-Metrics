@@ -566,6 +566,11 @@ Filesystem                                                                      
 -    Grafana graphically displays metrics collected by Prometheus and you can use it to identify trends and problems for the cluster, nodes, and namespaces.
 -    How to configure Prometheus and Alertmanager to use persistent storage to prevent data loss.
 
+# Enabling monitoring for user-defined projects
+
+https://docs.openshift.com/container-platform/4.10/monitoring/enabling-monitoring-for-user-defined-projects.html
+
+
 # Deploying Cluster Logging
 
 https://docs.openshift.com/container-platform/4.10/logging/cluster-logging-deploying.html
